@@ -3,8 +3,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MEMORY_SIZE 100 // bytes = character
+#define MEMORY_SIZE 300 // bytes = character
 #define BUFFER_SIZE 40
+
+typedef struct
+{
+    char JobId[4];
+    int TTL;
+    int TLL;
+    int TTC;
+    int LLC;
+} PCB;
 
 // Structure for OS state
 typedef struct
@@ -13,30 +22,37 @@ typedef struct
     char IR[4];               // Instruction Register (4 bytes)
     char R[4];                // General Purpose Register (4 bytes)
     int IC;                   // Instruction Counter Register (2 bytes) {0-99}
-    int SI;                   // Interrupt {1,2,3}
+    int SI;                   // System Interrupt {1,2,3}
+    int PI;                   // Program Error Interrupt {1,2,3}
+    int TI;                   // Time Interrupt {0,2}
     bool C;                   // Toggle (1 byte)
     char buffer[BUFFER_SIZE]; // Buffer for input/output
     FILE *inputFile;
     FILE *outputFile;
+    PCB PCB;
+    char PTR[4];
+    int EM;
 } OS;
+
+OS os;
 
 bool loadingData = false;
 int x = 0; // To iterate the memory block bytewise from 0 to 399
 // To get the word no (00-99): do x / 4,
 // to get byte no. (0-3) : do x % 4
 
-OS os;
-
 // Function declarations
 void LOAD();               // Loads from input.txt to Memory
-void init();               // Resets everything to " "
+void INIT();               // Resets everything to " "
 void startExecution();     // Initiates the execution the commands
 void executeUserProgram(); // Executes the commands {Commands definition} Slave Mode
 void MOS();                // Definition of GD, PD, H - Master Mode
+void TERMINATE(int EM);    // Terminate Program with error msg and 2 Lines
 
 void printMemory();
 void clearBuffer();
 int getIntAddress();
+void PrintErrorMessage(int ErrorCode);
 
 // Function to initialize the system (reset memory, registers, etc.)
 
@@ -54,7 +70,7 @@ void LOAD()
         if (strncmp(os.buffer, "$AMJ", strlen("$AMJ")) == 0)
         { // To create a JOB
             printf("\n\n---Initializing OS---\n");
-            init();
+            INIT();
         }
         else if (strncmp(os.buffer, "$DTA", strlen("$DTA")) == 0)
         {
@@ -105,7 +121,7 @@ void LOAD()
     } while (!feof(os.inputFile)); // Continue till end of file
 }
 
-void init()
+void INIT()
 {
     for (int i = 0; i < MEMORY_SIZE; i++)
     {
@@ -119,10 +135,14 @@ void init()
     {
         os.IR[i] = ' ';
         os.R[i] = ' ';
+        os.PTR[i] = ' ';
     }
 
     os.C = false;
     x = 0;
+
+    os.SI = 3;
+    os.TI = 0;
 
     loadingData = false;
     printf("\n---OS Initialization Complete---\n");
@@ -262,12 +282,28 @@ void MOS()
     case 3:
         // H {Halt}
 
-        fputs("\n\n", os.outputFile);
+        TERMINATE(os.EM);
 
         break;
     default:
         break;
     }
+}
+
+void TERMINATE(int EM)
+{
+    if (EM != 0)
+    {
+        fputs("Program terminated abruptly with error : ", os.outputFile);
+        PrintErrorMessage(EM);
+    }
+    else
+    {
+        fputs("Program terminated normally", os.outputFile);
+    }
+    fputs("\n", os.outputFile);
+    fputs("\n", os.outputFile);
+    // TODO : Status of Registers, etc.
 }
 
 void printMemory()
@@ -296,6 +332,36 @@ void clearBuffer()
 int getIntAddress()
 {
     return (((int)os.IR[2] - 48) * 10 + (int)os.IR[3] - 48);
+}
+
+void PrintErrorMessage(int ErrorCode)
+{
+    switch (ErrorCode)
+    {
+    case 0:
+        fputs("No Error", os.outputFile); // 0
+        break;
+    case 1:
+        fputs("Out of Data", os.outputFile); // 1
+        break;
+    case 2:
+        fputs("Line Limit Exceeded", os.outputFile); // 2
+        break;
+    case 3:
+        fputs("Time Limit Exceeded", os.outputFile); // 3
+        break;
+    case 4:
+        fputs("Operation Code Error", os.outputFile); // 4
+        break;
+    case 5:
+        fputs("Operand Error", os.outputFile); // 5
+        break;
+    case 6:
+        fputs("Invalid Page Fault", os.outputFile); // 6
+        break;
+    default:
+        break;
+    }
 }
 
 int main()
